@@ -6562,9 +6562,13 @@ static void TreeNodeStoreStackData(ImGuiTreeNodeFlags flags, float x1)
     tree_node_data->NavRect = g.LastItemData.NavRect;
 
     // Initially I tried to latch value for GetColorU32(ImGuiCol_TreeLines) but it's not a good trade-off for very large trees.
-    tree_node_data->DrawLinesX1 = (flags & (ImGuiTreeNodeFlags_DrawLinesFull | ImGuiTreeNodeFlags_DrawLinesToNodes)) ? x1 : +FLT_MAX;
-    tree_node_data->DrawLinesY2 = -FLT_MAX;
+    const bool draw_lines = (flags & (ImGuiTreeNodeFlags_DrawLinesFull | ImGuiTreeNodeFlags_DrawLinesToNodes)) != 0;
+    tree_node_data->DrawLinesX1 = draw_lines ? (x1 + g.FontSize * 0.5f + g.Style.FramePadding.x) : +FLT_MAX;
+    tree_node_data->DrawLinesTableColumn = (draw_lines && g.CurrentTable) ? (ImGuiTableColumnIdx)g.CurrentTable->CurrentColumn : -1;
+    tree_node_data->DrawLinesToNodesY2 = -FLT_MAX;
     window->DC.TreeHasStackDataDepthMask |= (1 << window->DC.TreeDepth);
+    if (flags & ImGuiTreeNodeFlags_DrawLinesToNodes)
+        window->DC.TreeRecordsClippedNodesY2Mask |= (1 << window->DC.TreeDepth);
 }
 
 // When using public API, currently 'id == storage_id' is always true, but we separate the values to facilitate advanced user code doing storage queries outside of UI loop.
@@ -6641,7 +6645,7 @@ bool ImGui::TreeNodeBehavior(ImGuiID id, ImGuiTreeNodeFlags flags, const char* l
     bool store_tree_node_stack_data = false;
     if ((flags & ImGuiTreeNodeFlags_DrawLinesMask_) == 0)
         flags |= g.Style.TreeLinesFlags;
-    const bool draw_tree_lines = (flags & (ImGuiTreeNodeFlags_DrawLinesFull | ImGuiTreeNodeFlags_DrawLinesToNodes)) && (frame_bb.Min.y < window->ClipRect.Max.y);// && (g.Style.TreeLinesSize > 0.0f);
+    const bool draw_tree_lines = (flags & (ImGuiTreeNodeFlags_DrawLinesFull | ImGuiTreeNodeFlags_DrawLinesToNodes)) && (frame_bb.Min.y < window->ClipRect.Max.y) && (g.Style.TreeLinesSize > 0.0f);
     if (is_open && !(flags & ImGuiTreeNodeFlags_NoTreePushOnOpen))
     {
         if ((flags & ImGuiTreeNodeFlags_NavLeftJumpsBackHere) && !g.NavIdIsAlive)
@@ -6654,10 +6658,12 @@ bool ImGui::TreeNodeBehavior(ImGuiID id, ImGuiTreeNodeFlags flags, const char* l
     const bool is_leaf = (flags & ImGuiTreeNodeFlags_Leaf) != 0;
     if (!is_visible)
     {
-        if (draw_tree_lines && (flags & ImGuiTreeNodeFlags_DrawLinesToNodes) && (window->DC.TreeHasStackDataDepthMask & (1 << window->DC.TreeDepth)))
+        if ((flags & ImGuiTreeNodeFlags_DrawLinesToNodes) && (window->DC.TreeRecordsClippedNodesY2Mask & (1 << (window->DC.TreeDepth - 1))))
         {
             ImGuiTreeNodeStackData* parent_data = &g.TreeNodeStack.Data[g.TreeNodeStack.Size - 1];
-            parent_data->DrawLinesY2 = ImMax(parent_data->DrawLinesY2, window->DC.CursorPos.y); // Don't need to aim to mid Y position as we are clipped anyway.
+            parent_data->DrawLinesToNodesY2 = ImMax(parent_data->DrawLinesToNodesY2, window->DC.CursorPos.y); // Don't need to aim to mid Y position as we are clipped anyway.
+            if (frame_bb.Min.y >= window->ClipRect.Max.y)
+                window->DC.TreeRecordsClippedNodesY2Mask &= ~(1 << (window->DC.TreeDepth - 1)); // Done
         }
         if (is_open && store_tree_node_stack_data)
             TreeNodeStoreStackData(flags, text_pos.x - text_offset_x); // Call before TreePushOverrideID()
@@ -6794,6 +6800,8 @@ bool ImGui::TreeNodeBehavior(ImGuiID id, ImGuiTreeNodeFlags flags, const char* l
             const ImU32 bg_col = GetColorU32((held && hovered) ? ImGuiCol_HeaderActive : hovered ? ImGuiCol_HeaderHovered : ImGuiCol_Header);
             RenderFrame(frame_bb.Min, frame_bb.Max, bg_col, true, style.FrameRounding);
             RenderNavCursor(frame_bb, id, nav_render_cursor_flags);
+            if (span_all_columns && !span_all_columns_label)
+                TablePopBackgroundChannel();
             if (flags & ImGuiTreeNodeFlags_Bullet)
                 RenderBullet(window->DrawList, ImVec2(text_pos.x - text_offset_x * 0.60f, text_pos.y + g.FontSize * 0.5f), text_col);
             else if (!is_leaf)
@@ -6814,6 +6822,8 @@ bool ImGui::TreeNodeBehavior(ImGuiID id, ImGuiTreeNodeFlags flags, const char* l
                 RenderFrame(frame_bb.Min, frame_bb.Max, bg_col, false);
             }
             RenderNavCursor(frame_bb, id, nav_render_cursor_flags);
+            if (span_all_columns && !span_all_columns_label)
+                TablePopBackgroundChannel();
             if (flags & ImGuiTreeNodeFlags_Bullet)
                 RenderBullet(window->DrawList, ImVec2(text_pos.x - text_offset_x * 0.5f, text_pos.y + g.FontSize * 0.5f), text_col);
             else if (!is_leaf)
@@ -6822,20 +6832,8 @@ bool ImGui::TreeNodeBehavior(ImGuiID id, ImGuiTreeNodeFlags flags, const char* l
                 LogSetNextTextDecoration(">", NULL);
         }
 
-        if (draw_tree_lines && (window->DC.TreeHasStackDataDepthMask & (1 << (window->DC.TreeDepth - 1))))
-        {
-            // Draw horizontal line from our parent node
-            ImGuiTreeNodeStackData* parent_data = &g.TreeNodeStack.Data[g.TreeNodeStack.Size - 1];
-            float x1 = parent_data->DrawLinesX1 + ImTrunc(g.FontSize * 0.5f + g.Style.FramePadding.x); // GetTreeNodeToLabelSpacing() * 0.5f
-            float x2 = text_pos.x - text_offset_x;
-            float y = text_pos.y + ImTrunc(g.FontSize * 0.5f);
-            parent_data->DrawLinesY2 = ImMax(parent_data->DrawLinesY2, y);
-            if (x1 < x2)
-                window->DrawList->AddLine(ImVec2(x1, y), ImVec2(x2, y), GetColorU32(ImGuiCol_TreeLines), g.Style.TreeLinesSize);
-        }
-
-        if (span_all_columns && !span_all_columns_label)
-            TablePopBackgroundChannel();
+        if (draw_tree_lines)
+            TreeNodeDrawLineToChildNode(ImVec2(text_pos.x - text_offset_x + padding.x, text_pos.y + g.FontSize * 0.5f));
 
         // Label
         if (display_frame)
@@ -6854,6 +6852,64 @@ bool ImGui::TreeNodeBehavior(ImGuiID id, ImGuiTreeNodeFlags flags, const char* l
 
     IMGUI_TEST_ENGINE_ITEM_INFO(id, label, g.LastItemData.StatusFlags | (is_leaf ? 0 : ImGuiItemStatusFlags_Openable) | (is_open ? ImGuiItemStatusFlags_Opened : 0));
     return is_open;
+}
+
+// Draw horizontal line from our parent node
+// This is only called for visible child nodes so we are not too fussy anymore about performances
+void ImGui::TreeNodeDrawLineToChildNode(const ImVec2& target_pos)
+{
+    ImGuiContext& g = *GImGui;
+    ImGuiWindow* window = g.CurrentWindow;
+    if ((window->DC.TreeHasStackDataDepthMask & (1 << (window->DC.TreeDepth - 1))) == 0)
+        return;
+
+    ImGuiTreeNodeStackData* parent_data = &g.TreeNodeStack.Data[g.TreeNodeStack.Size - 1];
+    float x1 = ImTrunc(parent_data->DrawLinesX1);
+    float x2 = ImTrunc(target_pos.x - g.Style.ItemInnerSpacing.x);
+    float y = ImTrunc(target_pos.y);
+    float rounding = (g.Style.TreeLinesRounding > 0.0f) ? ImMin(x2 - x1, g.Style.TreeLinesRounding) : 0.0f;
+    parent_data->DrawLinesToNodesY2 = ImMax(parent_data->DrawLinesToNodesY2, y - rounding);
+    if (x1 >= x2)
+        return;
+    if (rounding > 0.0f)
+    {
+        x1 += 0.5f + rounding;
+        window->DrawList->PathArcToFast(ImVec2(x1, y - rounding), rounding, 6, 3);
+        if (x1 < x2)
+            window->DrawList->PathLineTo(ImVec2(x2, y));
+        window->DrawList->PathStroke(GetColorU32(ImGuiCol_TreeLines), ImDrawFlags_None, g.Style.TreeLinesSize);
+    }
+    else
+    {
+        window->DrawList->AddLine(ImVec2(x1, y), ImVec2(x2, y), GetColorU32(ImGuiCol_TreeLines), g.Style.TreeLinesSize);
+    }
+}
+
+// Draw vertical line of the hierarchy
+void ImGui::TreeNodeDrawLineToTreePop(const ImGuiTreeNodeStackData* data)
+{
+    ImGuiContext& g = *GImGui;
+    ImGuiWindow* window = g.CurrentWindow;
+    float y1 = ImMax(data->NavRect.Max.y, window->ClipRect.Min.y);
+    float y2 = data->DrawLinesToNodesY2;
+    if (data->TreeFlags & ImGuiTreeNodeFlags_DrawLinesFull)
+    {
+        float y2_full = window->DC.CursorPos.y;
+        if (g.CurrentTable)
+            y2_full = ImMax(g.CurrentTable->RowPosY2, y2_full);
+        y2_full = ImTrunc(y2_full - g.Style.ItemSpacing.y - g.FontSize * 0.5f);
+        if (y2 + (g.Style.ItemSpacing.y + g.Style.TreeLinesRounding) < y2_full) // FIXME: threshold to use ToNodes Y2 instead of Full Y2 when close by ItemSpacing.y
+            y2 = y2_full;
+    }
+    y2 = ImMin(y2, window->ClipRect.Max.y);
+    if (y2 <= y1)
+        return;
+    float x = ImTrunc(data->DrawLinesX1);
+    if (data->DrawLinesTableColumn != -1)
+        TablePushColumnChannel(data->DrawLinesTableColumn);
+    window->DrawList->AddLine(ImVec2(x, y1), ImVec2(x, y2), GetColorU32(ImGuiCol_TreeLines), g.Style.TreeLinesSize);
+    if (data->DrawLinesTableColumn != -1)
+        TablePopColumnChannel();
 }
 
 void ImGui::TreePush(const char* str_id)
@@ -6894,24 +6950,16 @@ void ImGui::TreePop()
     {
         const ImGuiTreeNodeStackData* data = &g.TreeNodeStack.Data[g.TreeNodeStack.Size - 1];
         IM_ASSERT(data->ID == window->IDStack.back());
+
+        // Handle Left arrow to move to parent tree node (when ImGuiTreeNodeFlags_NavLeftJumpsBackHere is enabled)
         if (data->TreeFlags & ImGuiTreeNodeFlags_NavLeftJumpsBackHere)
-        {
-            // Handle Left arrow to move to parent tree node (when ImGuiTreeNodeFlags_NavLeftJumpsBackHere is enabled)
             if (g.NavIdIsAlive && g.NavMoveDir == ImGuiDir_Left && g.NavWindow == window && NavMoveRequestButNoResultYet())
                 NavMoveRequestResolveWithPastTreeNode(&g.NavMoveResultLocal, data);
-        }
+
+        // Draw hierarchy lines
         if (data->DrawLinesX1 != +FLT_MAX && window->DC.CursorPos.y >= window->ClipRect.Min.y)
-        {
-            // Draw vertical line of the hierarchy
-            float y1 = ImMax(data->NavRect.Max.y, window->ClipRect.Min.y);
-            float y2 = (data->TreeFlags & ImGuiTreeNodeFlags_DrawLinesToNodes) ? data->DrawLinesY2 : ImTrunc(window->DC.CursorPos.y - g.Style.ItemSpacing.y - g.FontSize * 0.5f);
-            y2 = ImMin(y2, window->ClipRect.Max.y);
-            if (y1 < y2)
-            {
-                float x = data->DrawLinesX1 + ImTrunc(g.FontSize * 0.5f + g.Style.FramePadding.x); // GetTreeNodeToLabelSpacing() * 0.5f
-                window->DrawList->AddLine(ImVec2(x, y1), ImVec2(x, y2), GetColorU32(ImGuiCol_TreeLines), g.Style.TreeLinesSize);
-            }
-        }
+            TreeNodeDrawLineToTreePop(data);
+
         g.TreeNodeStack.pop_back();
         window->DC.TreeHasStackDataDepthMask &= ~tree_depth_mask;
     }

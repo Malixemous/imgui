@@ -29,7 +29,7 @@
 // Library Version
 // (Integer encoded as XYYZZ for use in #if preprocessor conditionals, e.g. '#if IMGUI_VERSION_NUM >= 12345')
 #define IMGUI_VERSION       "1.92.0 WIP"
-#define IMGUI_VERSION_NUM   19192
+#define IMGUI_VERSION_NUM   19193
 #define IMGUI_HAS_TABLE
 
 /*
@@ -1217,8 +1217,8 @@ enum ImGuiTreeNodeFlags_
     // [EXPERIMENTAL] Draw lines connecting TreeNode hierarchy. Discuss in GitHub issue #2920.
     // Default value is pulled from style.TreeLinesFlags. May be overridden in TreeNode calls.
     ImGuiTreeNodeFlags_DrawLinesNone        = 1 << 18,  // No lines drawn
-    ImGuiTreeNodeFlags_DrawLinesFull        = 1 << 19,  // Horizontal lines to child nodes. Vertical line drawn down to TreePop() position: cover full contents.
-    ImGuiTreeNodeFlags_DrawLinesToNodes     = 1 << 20,  // Horizontal lines to child nodes. Vertical line drawn down to bottom-most child node. A little bit slower.
+    ImGuiTreeNodeFlags_DrawLinesFull        = 1 << 19,  // Horizontal lines to child nodes. Vertical line drawn down to TreePop() position: cover full contents. Faster (for large trees).
+    ImGuiTreeNodeFlags_DrawLinesToNodes     = 1 << 20,  // Horizontal lines to child nodes. Vertical line drawn down to bottom-most child node. Slower (for large trees).
 
 #ifndef IMGUI_DISABLE_OBSOLETE_FUNCTIONS
     ImGuiTreeNodeFlags_AllowItemOverlap     = ImGuiTreeNodeFlags_AllowOverlap,  // Renamed in 1.89.7
@@ -1730,6 +1730,7 @@ enum ImGuiStyleVar_
     ImGuiStyleVar_TableAngledHeadersAngle,  // float     TableAngledHeadersAngle
     ImGuiStyleVar_TableAngledHeadersTextAlign,// ImVec2  TableAngledHeadersTextAlign
     ImGuiStyleVar_TreeLinesSize,            // float     TreeLinesSize
+    ImGuiStyleVar_TreeLinesRounding,        // float     TreeLinesRounding
     ImGuiStyleVar_ButtonTextAlign,          // ImVec2    ButtonTextAlign
     ImGuiStyleVar_SelectableTextAlign,      // ImVec2    SelectableTextAlign
     ImGuiStyleVar_SeparatorTextBorderSize,  // float     SeparatorTextBorderSize
@@ -2190,7 +2191,8 @@ struct ImGuiStyle
     float       TableAngledHeadersAngle;    // Angle of angled headers (supported values range from -50.0f degrees to +50.0f degrees).
     ImVec2      TableAngledHeadersTextAlign;// Alignment of angled headers within the cell
     ImGuiTreeNodeFlags TreeLinesFlags;      // Default way to draw lines connecting TreeNode hierarchy. ImGuiTreeNodeFlags_DrawLinesNone or ImGuiTreeNodeFlags_DrawLinesFull or ImGuiTreeNodeFlags_DrawLinesToNodes.
-    float              TreeLinesSize;       // Thickness of outlines when using ImGuiTreeNodeFlags_DrawLines.
+    float       TreeLinesSize;              // Thickness of outlines when using ImGuiTreeNodeFlags_DrawLines.
+    float       TreeLinesRounding;          // Radius of lines connecting child nodes to the vertical line.
     ImGuiDir    ColorButtonPosition;        // Side of the color button in the ColorEdit4 widget (left/right). Defaults to ImGuiDir_Right.
     ImVec2      ButtonTextAlign;            // Alignment of button text when button is larger than text. Defaults to (0.5f, 0.5f) (centered).
     ImVec2      SelectableTextAlign;        // Alignment of selectable text. Defaults to (0.0f, 0.0f) (top-left aligned). It's generally important to keep this left-aligned if you want to lay multiple items on a same line.

@@ -1362,6 +1362,7 @@ ImGuiStyle::ImGuiStyle()
     TableAngledHeadersTextAlign = ImVec2(0.5f,0.0f);// Alignment of angled headers within the cell
     TreeLinesFlags              = ImGuiTreeNodeFlags_DrawLinesNone;
     TreeLinesSize               = 1.0f;             // Thickness of outlines when using ImGuiTreeNodeFlags_DrawLines.
+    TreeLinesRounding           = 0.0f;             // Radius of lines connecting child nodes to the vertical line.
     ColorButtonPosition         = ImGuiDir_Right;   // Side of the color button in the ColorEdit4 widget (left/right). Defaults to ImGuiDir_Right.
     ButtonTextAlign             = ImVec2(0.5f,0.5f);// Alignment of button text when button is larger than text.
     SelectableTextAlign         = ImVec2(0.0f,0.0f);// Alignment of selectable text. Defaults to (0.0f, 0.0f) (top-left aligned). It's generally important to keep this left-aligned if you want to lay multiple items on a same line.
@@ -1416,6 +1417,7 @@ void ImGuiStyle::ScaleAllSizes(float scale_factor)
     TabCloseButtonMinWidthSelected = (TabCloseButtonMinWidthSelected > 0.0f && TabCloseButtonMinWidthSelected != FLT_MAX) ? ImTrunc(TabCloseButtonMinWidthSelected * scale_factor) : TabCloseButtonMinWidthSelected;
     TabCloseButtonMinWidthUnselected = (TabCloseButtonMinWidthUnselected > 0.0f && TabCloseButtonMinWidthUnselected != FLT_MAX) ? ImTrunc(TabCloseButtonMinWidthUnselected * scale_factor) : TabCloseButtonMinWidthUnselected;
     TabBarOverlineSize = ImTrunc(TabBarOverlineSize * scale_factor);
+    TreeLinesRounding = ImTrunc(TreeLinesRounding * scale_factor);
     SeparatorTextPadding = ImTrunc(SeparatorTextPadding * scale_factor);
     DisplayWindowPadding = ImTrunc(DisplayWindowPadding * scale_factor);
     DisplaySafeAreaPadding = ImTrunc(DisplaySafeAreaPadding * scale_factor);
@@ -3418,6 +3420,7 @@ static const ImGuiStyleVarInfo GStyleVarsInfo[] =
     { 1, ImGuiDataType_Float, (ImU32)offsetof(ImGuiStyle, TableAngledHeadersAngle)},    // ImGuiStyleVar_TableAngledHeadersAngle
     { 2, ImGuiDataType_Float, (ImU32)offsetof(ImGuiStyle, TableAngledHeadersTextAlign)},// ImGuiStyleVar_TableAngledHeadersTextAlign
     { 1, ImGuiDataType_Float, (ImU32)offsetof(ImGuiStyle, TreeLinesSize)},              // ImGuiStyleVar_TreeLinesSize
+    { 1, ImGuiDataType_Float, (ImU32)offsetof(ImGuiStyle, TreeLinesRounding)},          // ImGuiStyleVar_TreeLinesRounding
     { 2, ImGuiDataType_Float, (ImU32)offsetof(ImGuiStyle, ButtonTextAlign) },           // ImGuiStyleVar_ButtonTextAlign
     { 2, ImGuiDataType_Float, (ImU32)offsetof(ImGuiStyle, SelectableTextAlign) },       // ImGuiStyleVar_SelectableTextAlign
     { 1, ImGuiDataType_Float, (ImU32)offsetof(ImGuiStyle, SeparatorTextBorderSize)},    // ImGuiStyleVar_SeparatorTextBorderSize
@@ -7649,7 +7652,7 @@ bool ImGui::Begin(const char* name, bool* p_open, ImGuiWindowFlags flags)
         window->DC.MenuBarAppending = false;
         window->DC.MenuColumns.Update(style.ItemSpacing.x, window_just_activated_by_user);
         window->DC.TreeDepth = 0;
-        window->DC.TreeHasStackDataDepthMask = 0x00;
+        window->DC.TreeHasStackDataDepthMask = window->DC.TreeRecordsClippedNodesY2Mask = 0x00;
         window->DC.ChildWindows.resize(0);
         window->DC.StateStorage = &window->StateStorage;
         window->DC.CurrentColumns = NULL;
@@ -16578,9 +16581,9 @@ void ImGui::DebugNodeWindowsListByBeginStackParent(ImGuiWindow** windows, int wi
         ImFormatString(buf, IM_ARRAYSIZE(buf), "[%04d] Window", window->BeginOrderWithinContext);
         //BulletText("[%04d] Window '%s'", window->BeginOrderWithinContext, window->Name);
         DebugNodeWindow(window, buf);
-        Indent();
+        TreePush(buf);
         DebugNodeWindowsListByBeginStackParent(windows + i + 1, windows_size - i - 1, window);
-        Unindent();
+        TreePop();
     }
 }
 
